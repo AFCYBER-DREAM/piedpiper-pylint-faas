@@ -10,14 +10,16 @@ def handle(request):
     Args:
         request (str): request body
     """
-    zip_files = build_temp_zipfiles(request)
-    temp_directories = build_directories(request)
-    pylint_reports = []
-    for zip_file, temp_directory in zip(zip_files, temp_directories):
-        unzip_files(zip_file, temp_directory.name)
-        os.chdir(temp_directory.name)
-        pylint_reports = run_pylint('.')
-
+    try:
+        zip_files = build_temp_zipfiles(request)
+        temp_directories = build_directories(request)
+        pylint_reports = ''
+        for zip_file, temp_directory in zip(zip_files, temp_directories):
+            unzip_files(zip_file, temp_directory.name)
+            os.chdir(temp_directory.name)
+            pylint_reports = run_pylint('.')
+    except Exception as e:
+        pylint_reports = e
     return pylint_reports
 
 
@@ -33,6 +35,15 @@ def get_rcfile():
     return None
 
 
+def load_supported_file_types():
+    """
+    Returns a list of supported file extensions.
+    TODO: Load from file or other location in future?
+    :return: list of file extensions
+    """
+    return ['.py', '.pyc', ]
+
+
 def run_pylint(directory):
     """
     Runs pylint on the directory
@@ -41,8 +52,16 @@ def run_pylint(directory):
     """
     buffer = ''
     rcfile = get_rcfile()
+    supported_file_types = load_supported_file_types()
+
     for (root, dir, files) in os.walk(directory):
         for file in files:
+            _, ext = os.path.splitext(file)
+            if ext not in supported_file_types:
+                buffer += '-'*50
+                buffer += '\nSkipping File: {}\nREASON: FILE TYPE NOT SUPPORTED\n\n'.format(file)
+                continue
+
             full_path = os.path.abspath(os.path.join(root, file))
             if rcfile is not None:
                 buffer += "Using pylintrc file : {}\n".format(rcfile)
@@ -50,7 +69,10 @@ def run_pylint(directory):
             else:
                 buffer += 'Could not locate pylintrc file\n'
 
-            out, err = epylint.py_run(full_path, return_std=True)
-            buffer += out.getvalue()
-            buffer += err.getvalue()
+            try:
+                out, err = epylint.py_run(full_path, return_std=True)
+                buffer += out.getvalue()
+                buffer += err.getvalue()
+            except Exception as e:
+                buffer += 'Caught Exception: {} when running {}\n'.format(e, full_path)
     return buffer
